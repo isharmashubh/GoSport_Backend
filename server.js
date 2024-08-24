@@ -55,9 +55,14 @@ app.get("/fetchdata.json", (req, res) => {
   });
 });
 
-// Serve directlyfile.html
+// Serve index.html from the 'public' folder for the root URL
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// Serve directlyfile.html from the 'public' folder
 app.get("/directlyfile.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "directlyfile.html"));
+  res.sendFile(path.join(__dirname, "public", "directlyfile.html"));
 });
 
 app.listen(port, () => {
