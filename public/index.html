@@ -85,23 +85,40 @@
             const matchCard = document.createElement("div");
             matchCard.className = "match-card";
 
+            // Determine the link to use for "Watch Live"
+            const watchLiveLink = match.m3u8link || match.link;
+
             matchCard.innerHTML = `
-            <h2>${match.name}</h2>
-            <div class="details">
-              <p><strong>Start Time:</strong> ${new Date(
-                match.startTime
-              ).toLocaleString()}</p>
-              <p><strong>Venue:</strong> ${match.venue}</p>
-              <p><strong>Tour:</strong> ${match.tour}</p>
-              <p><strong>Scorecard:</strong> ${match.scorecard}</p>
-            </div>
-            <p><a href="${match.link}" target="_blank">Watch Live</a></p>
-          `;
+                    <h2>${match.name}</h2>
+                    <div class="details">
+                      <p><strong>Start Time:</strong> ${new Date(
+                        match.startTime
+                      ).toLocaleString()}</p>
+                      <p><strong>Venue:</strong> ${match.venue}</p>
+                      <p><strong>Tour:</strong> ${match.tour}</p>
+                      <p><strong>Scorecard:</strong> ${match.scorecard}</p>
+                    </div>
+                    <p><a href="#" onclick="handleWatchLiveClick('${watchLiveLink}', '${
+              match.name
+            }')">Watch Live</a></p>
+                  `;
 
             container.appendChild(matchCard);
           });
         } catch (error) {
           console.error("Error fetching the matches data:", error);
+        }
+      }
+
+      function handleWatchLiveClick(link, matchName) {
+        if (link.endsWith(".m3u8")) {
+          // Redirect to directlyfile.html with the m3u8 link and match name as query parameters
+          window.location.href = `../directlyfile.html?url=${encodeURIComponent(
+            link
+          )}&matchName=${encodeURIComponent(matchName)}`;
+        } else {
+          // Open the link in a new tab
+          window.open(link, "_blank");
         }
       }
 

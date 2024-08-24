@@ -1,88 +1,97 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HLS Player</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HLS Full-Screen Player</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: #f0f0f0;
-        }
-        #container {
-            text-align: center;
-        }
-        input[type="text"] {
-            width: 80%;
-            padding: 10px;
-            margin-bottom: 20px;
-            font-size: 16px;
-        }
-        button {
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        video {
-            width: 100%;
-            max-width: 640px;
-        }
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+      }
+      #video-container {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: flex-start; /* Align items to the top */
+        justify-content: center;
+        padding-top: 10px; /* Adjust padding to move video down */
+      }
+      #video-player {
+        width: 100%;
+        height: calc(95% - 20px); /* Adjust height if needed */
+        object-fit: cover;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
+    <div id="video-container">
+      <video id="video-player" controls></video>
+    </div>
 
-<div id="container">
-    <h1>HLS Player</h1>
-    <input type="text" id="m3u8-url" placeholder="Enter your .m3u8 URL here" />
-    <br />
-    <button onclick="playStream()">Play Stream</button>
-    <br /><br />
-    <video id="video-player" controls width="640" height="360"></video>
-</div>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script>
+      const video = document.getElementById("video-player");
 
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<script>
-    let hls;
-    const video = document.getElementById('video-player');
+      // Extract URL parameters from the query string
+      const urlParams = new URLSearchParams(window.location.search);
+      const m3u8Url = urlParams.get("url");
+      const matchName = urlParams.get("matchName");
 
-    function playStream() {
-        const url = document.getElementById('m3u8-url').value;
+      // Set the page title to the match name
+      if (matchName) {
+        document.title = matchName;
+      }
 
+      // Play the HLS stream if the URL is provided
+      if (m3u8Url) {
+        playStream(m3u8Url);
+      }
+
+      function playStream(url) {
         if (Hls.isSupported()) {
-            if (hls) {
-                hls.destroy(); // Clean up previous Hls instance if it exists
+          const hls = new Hls();
+          hls.loadSource(url);
+          hls.attachMedia(video);
+
+          hls.on(Hls.Events.MANIFEST_PARSED, function () {
+            video.play();
+          });
+
+          hls.on(Hls.Events.ERROR, function (event, data) {
+            if (data.fatal) {
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                  alert("A network error occurred.");
+                  break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                  alert("A media error occurred.");
+                  hls.recoverMediaError();
+                  break;
+                default:
+                  hls.destroy();
+                  alert("An unrecoverable error occurred.");
+                  break;
+              }
             }
-
-            hls = new Hls();
-            hls.loadSource(url);
-            hls.attachMedia(video);
-
-            hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                video.play();
-            });
-
-            hls.on(Hls.Events.ERROR, function(event, data) {
-                if (data.fatal === Hls.ErrorTypes.NETWORK_ERROR) {
-                    alert('Network error occurred.');
-                }
-            });
-
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = url;
-            video.addEventListener('loadedmetadata', function() {
-                video.play();
-            });
+          });
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = url;
+          video.addEventListener("loadedmetadata", function () {
+            video.play();
+          });
         } else {
-            alert('HLS is not supported in this browser.');
+          alert("HLS is not supported in this browser.");
         }
-    }
-</script>
-
-</body>
+      }
+    </script>
+  </body>
 </html>
