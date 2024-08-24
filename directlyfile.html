@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HLS Player</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+        #container {
+            text-align: center;
+        }
+        input[type="text"] {
+            width: 80%;
+            padding: 10px;
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        video {
+            width: 100%;
+            max-width: 640px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <h1>HLS Player</h1>
+    <input type="text" id="m3u8-url" placeholder="Enter your .m3u8 URL here" />
+    <br />
+    <button onclick="playStream()">Play Stream</button>
+    <br /><br />
+    <video id="video-player" controls width="640" height="360"></video>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script>
+    let hls;
+    const video = document.getElementById('video-player');
+
+    function playStream() {
+        const url = document.getElementById('m3u8-url').value;
+
+        if (Hls.isSupported()) {
+            if (hls) {
+                hls.destroy(); // Clean up previous Hls instance if it exists
+            }
+
+            hls = new Hls();
+            hls.loadSource(url);
+            hls.attachMedia(video);
+
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                video.play();
+            });
+
+            hls.on(Hls.Events.ERROR, function(event, data) {
+                if (data.fatal === Hls.ErrorTypes.NETWORK_ERROR) {
+                    alert('Network error occurred.');
+                }
+            });
+
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = url;
+            video.addEventListener('loadedmetadata', function() {
+                video.play();
+            });
+        } else {
+            alert('HLS is not supported in this browser.');
+        }
+    }
+</script>
+
+</body>
+</html>
