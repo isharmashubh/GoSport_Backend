@@ -25,31 +25,12 @@ async function login(driver) {
 
   await sleep(3000);
 
-  // let imageElement = await driver.findElement(
-  //   By.css("picture img.sc-rhrvi4-0.cNUpys.sc-1o55c8w-5.kaImfW")
-  // );
-  // await imageElement.click();
-
   let googleLogo = await driver.findElement(
     By.css('picture img[src*="google-g-logo"]')
   );
   await googleLogo.click();
 
-  // console.log("Clicking on the Login button...");
-  // const loginButton = await driver.findElement(
-  //   By.css('span[data-analytics*="LoginButtonClicked"]')
-  // );
-  // await loginButton.click();
-
   await sleep(3000);
-
-  // console.log("Clicking on the Google login icon...");
-  // const googleLoginIcon = await driver.findElement(
-  //   By.css(
-  //     'img[src="/fc-web/1724415142272/build/desktop/client/images/googleLogocd64e1c5e13a274a8a91.png"]'
-  //   )
-  // );
-  // await googleLoginIcon.click();
 
   const originalWindowHandle = await driver.getWindowHandle();
   const handles = await driver.getAllWindowHandles();
@@ -78,7 +59,7 @@ async function login(driver) {
   await driver.switchTo().window(originalWindowHandle);
 }
 
-async function extractM3U8Links(driver, matchLink) {
+async function extractM3U8Links(driver, matchLink, matchid) {
   console.log(`Opening a new tab for match link: ${matchLink}`);
   const originalWindowHandle = await driver.getWindowHandle();
 
@@ -89,27 +70,6 @@ async function extractM3U8Links(driver, matchLink) {
 
   await driver.get(matchLink);
 
-  console.log("Extracting and logging the HTML content of the page.");
-  const pageHtml = await driver.getPageSource();
-
-  // Check if "Your Free Trial Is Over" is in the page content
-  if (
-    pageHtml.includes(
-      "Your Free Trial Is Over" || pageHtml.includes("Match Abandoned")
-    )
-  ) {
-    console.log(
-      "Free trial message detected or match has been abandoned. Closing the tab and skipping this match."
-    );
-    await driver.close();
-    await driver.switchTo().window(originalWindowHandle);
-    return "";
-  }
-
-  // const outputPath = path.join(__dirname, "page-content.html");
-  // fs.writeFileSync(outputPath, pageHtml, "utf8");
-  // console.log(`Page HTML content has been written to ${outputPath}`);
-
   console.log("Waiting for 8 seconds to capture network requests...");
   await sleep(8000);
 
@@ -119,37 +79,38 @@ async function extractM3U8Links(driver, matchLink) {
 
   console.log("Network requests captured:");
 
-  let m3u8Link = resources
+  // Find the .ts link that matches the desired pattern
+  const tsLink = resources
     .map((resource) => resource.name)
-    .find((link) => link.endsWith("3289416.m3u8")); // Prioritize 3289416.m3u8
-  if (!m3u8Link) {
-    m3u8Link = resources
-      .map((resource) => resource.name)
-      .find((link) => link.endsWith("1756808.m3u8")); // Then check for 1756808.m3u8
-  }
-  if (!m3u8Link) {
-    m3u8Link = resources
-      .map((resource) => resource.name)
-      .find((link) => link.endsWith("master.m3u8")); // Then check for master.m3u8
-  }
+    .find((link) => {
+      // Check if the link matches the pattern with the matchid and ends with .ts
+      const tsPattern = new RegExp(
+        `https://dai\\.fancode\\.com/primary/${matchid}_english.*\\.ts`
+      );
+      return tsPattern.test(link);
+    });
 
-  if (!m3u8Link) {
-    m3u8Link = resources
-      .map((resource) => resource.name)
-      .find((link) => link.endsWith("414232.m3u8")); // Finally, check for 414232.m3u8
-  }
-  if (m3u8Link) {
-    console.log("Captured m3u8 link:");
-    console.log(m3u8Link);
+  let modifiedLink = null;
+
+  if (tsLink) {
+    console.log("Captured .ts link:");
+    console.log(tsLink);
+
+    // Replace everything after the last slash with '1080p.m3u8'
+    const lastSlashIndex = tsLink.lastIndexOf("/");
+    modifiedLink = tsLink.substring(0, lastSlashIndex + 1) + "1080p.m3u8";
+
+    console.log("Modified link:");
+    console.log(modifiedLink);
   } else {
-    console.log("No m3u8 link ending with '1756808.m3u8' found.");
+    console.log("No .ts link matching the pattern found.");
   }
 
   // Close the current tab
   await driver.close();
   await driver.switchTo().window(originalWindowHandle);
 
-  return m3u8Link || "";
+  return modifiedLink || "";
 }
 
 async function main() {
@@ -209,7 +170,7 @@ async function main() {
         }
 
         console.log(`Processing match link ${cleanedLink}.`);
-        const m3u8Link = await extractM3U8Links(driver, cleanedLink);
+        const m3u8Link = await extractM3U8Links(driver, cleanedLink, id);
 
         if (m3u8Link) {
           const matchDetails = matchMap.get(id);
@@ -237,7 +198,7 @@ async function main() {
 
 function getIndianDate() {
   const now = new Date();
-  const istOffset = 0 * 60;
+  const istOffset = 5.5 * 60;
   const utcOffset = now.getTimezoneOffset();
   const istDate = new Date(now.getTime() + istOffset * 60000);
   return istDate.toISOString().split("T")[0];

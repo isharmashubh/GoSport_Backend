@@ -111,11 +111,12 @@
       }
 
       function handleWatchLiveClick(link, matchName) {
+        // Store the match name in localStorage
+        localStorage.setItem("currentMatchName", matchName);
+
         if (link.endsWith(".m3u8")) {
-          // Redirect to directlyfile.html with the m3u8 link and match name as query parameters
-          window.location.href = `../directlyfile.html?url=${encodeURIComponent(
-            link
-          )}&matchName=${encodeURIComponent(matchName)}`;
+          // Redirect to directlyfile.html with only the m3u8 link as a query parameter
+          window.location.href = `../directlyfile.html?url=${link}`;
         } else {
           // Open the link in a new tab
           window.open(link, "_blank");
