@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
 const mongoose = require("mongoose");
-
+require("dotenv").config();
 const app = express();
 const port = 3005;
 
@@ -13,9 +13,7 @@ app.use(express.static("public"));
 // Connect to MongoDB
 async function connectDB() {
   try {
-    await mongoose.connect(
-      "mongodb+srv://admin:1122334455@cluster0.qybtm.mongodb.net/Fancode"
-    );
+    await mongoose.connect(process.env.MONGODB_URI);
     console.log("MongoDB connected");
   } catch (err) {
     console.error("MongoDB connection error:", err);

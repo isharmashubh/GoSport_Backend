@@ -1,0 +1,31 @@
+name: Run Selenium Script
+
+on:
+  schedule:
+    # Runs every minute
+    - cron: "* * * * *"
+  workflow_dispatch: # Allows you to manually trigger the workflow
+
+jobs:
+  selenium:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: "14" # or your required Node.js version
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Selenium script
+        run: npm run build # Replace with your actual script command
+        env:
+          # Set environment variables if necessary, e.g.:
+          email: ${{ secrets.EMAIL }}
+          password: ${{ secrets.PASSWORD }}
+          MONGODB_URI: ${{ secrets.PASSWORD }}
