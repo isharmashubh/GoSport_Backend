@@ -26,7 +26,7 @@ async function connectDB() {
 // Execute fetchSchedule.js once when the server starts
 async function executeFetchSchedule() {
   console.log("Calling fetchSchedule.js");
-  exec("node fetchSchedule.js", (error, stdout, stderr) => {
+  exec("node Cricket/fetchSchedule.js", (error, stdout, stderr) => {
     if (error) {
       console.error(`Error executing fetchSchedule.js: ${error}`);
       return;

@@ -4,9 +4,15 @@ const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
 const util = require("util");
-require("dotenv").config();
+const getMatchLink = require("../extractMatchLink");
+const mainFootball = require("../Football/fetchFootballSchedule");
+const game = "cricket";
+require("dotenv").config({
+  path: require("path").resolve(__dirname, "../.env"),
+});
 const execPromise = util.promisify(exec);
-const { Match } = require("./db");
+const { cricketMatch } = require("../db");
+let driver;
 
 // Read credentials from .env
 const email = process.env.email;
@@ -20,7 +26,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 async function fetchingdatadatewise(driver, date) {
-  const url = `https://www.fancode.com/graphql?extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22552b9a3d8af3f5dc94b8d308d6837f8b300738cf72025d1d91e4949e105ba9ad%22%7D%7D&operation=query&operationName=FetchScheduleData&variables=%7B%22filter%22%3A%7B%22slug%22%3A%22cricket%22%2C%22collectionId%22%3Anull%2C%22dateRange%22%3A%7B%22fromDate%22%3A%22${date}%22%2C%22toDate%22%3A%22${date}%22%7D%2C%22streamingFilter%22%3A%22STREAMING%22%2C%22isLive%22%3Atrue%2C%22tours%22%3A%5B%5D%7D%7D`;
+  const url = `https://www.fancode.com/graphql?extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22552b9a3d8af3f5dc94b8d308d6837f8b300738cf72025d1d91e4949e105ba9ad%22%7D%7D&operation=query&operationName=FetchScheduleData&variables=%7B%22filter%22%3A%7B%22slug%22%3A%22${game}%22%2C%22collectionId%22%3Anull%2C%22dateRange%22%3A%7B%22fromDate%22%3A%22${date}%22%2C%22toDate%22%3A%22${date}%22%7D%2C%22streamingFilter%22%3A%22STREAMING%22%2C%22isLive%22%3Atrue%2C%22tours%22%3A%5B%5D%7D%7D`;
 
   console.log(`The API I am using to get data is - ${url}`);
 
@@ -58,9 +64,8 @@ async function fetchingdatadatewise(driver, date) {
     console.log("Match IDs and details prepared. Extracting m3u8 links.");
     for (const id of liveMatches) {
       try {
-        const { stdout: link } = await execPromise(
-          `node extractMatchLink.js ${id}`
-        );
+        const link = await getMatchLink(id, game); // Call the function directly with id
+        console.log("Match link:", link);
         const cleanedLink = link.trim();
         if (cleanedLink) {
           const matchDetails = matchMap.get(id);
@@ -77,17 +82,19 @@ async function fetchingdatadatewise(driver, date) {
           matchMap.set(id, matchDetails);
         }
         console.log(
-          `I have fetcheddata of date:- ${date} and written it inside matchdata.json`
+          `I have fetcheddata of date:- ${date} and written it inside cricketmatchdata.json`
         );
       } catch (error) {
         console.error(`Error processing match ID ${id}:`, error.message);
       }
     }
-    console.log("I am writing data in matchdata.json from matchmap");
+    console.log("I am writing data in cricketmatchdata.json from matchmap");
     // Read existing data
     let existingData = [];
     try {
-      existingData = JSON.parse(fs.readFileSync("matchdata.json", "utf8"));
+      existingData = JSON.parse(
+        fs.readFileSync("../Cricket/cricketmatchdata.json", "utf8")
+      );
     } catch (error) {
       console.warn("No existing data found. Starting fresh.");
     }
@@ -95,9 +102,12 @@ async function fetchingdatadatewise(driver, date) {
     // Convert matchMap to an array and merge with existing data
     const updatedData = [...existingData, ...Array.from(matchMap.entries())];
 
-    // Write the combined data back to matchdata.json
-    fs.writeFileSync("matchdata.json", JSON.stringify(updatedData, null, 2));
-    console.log("Appended new match data to matchdata.json.");
+    // Write the combined data back to cricketmatchdata.json
+    fs.writeFileSync(
+      "../Cricket/cricketmatchdata.json",
+      JSON.stringify(updatedData, null, 2)
+    );
+    console.log("Appended new match data to cricketmatchdata.json.");
   } catch (error) {
     console.error(`Error fetching data:`, error.message);
   }
@@ -204,7 +214,9 @@ async function importData() {
     try {
       // Read and parse the JSON data
       const data = JSON.parse(
-        fs.readFileSync(path.join(__dirname, "matchdata.json"))
+        fs.readFileSync(
+          path.join(__dirname, "../Cricket/cricketmatchdata.json")
+        )
       );
 
       // Check if data is empty
@@ -219,7 +231,9 @@ async function importData() {
       // Use Promise.all to handle all match promises concurrently
       const matchPromises = data.map(async (match) => {
         const matchDetails = match[1]; // Extracting match details
-        const existingMatch = await Match.findOne({ link: matchDetails.link });
+        const existingMatch = await cricketMatch.findOne({
+          link: matchDetails.link,
+        });
 
         if (existingMatch) {
           console.log("This is an existing match just updating the scorecard");
@@ -238,7 +252,7 @@ async function importData() {
           }
         } else {
           // Create and save a new match instance
-          const newMatch = new Match({
+          const newMatch = new cricketMatch({
             name: matchDetails.name,
             startTime: matchDetails.startTime,
             venue: matchDetails.venue,
@@ -264,16 +278,16 @@ async function importData() {
 
 async function removeMissingMatches() {
   try {
-    // Read and parse the JSON data from matchdata.json
+    // Read and parse the JSON data from cricketmatchdata.json
     const data = JSON.parse(
-      fs.readFileSync(path.join(__dirname, "matchdata.json"))
+      fs.readFileSync(path.join(__dirname, "../Cricket/cricketmatchdata.json"))
     );
 
     // Extract match links from the JSON data for comparison
     const existingMatchLinks = new Set(data.map((match) => match[1].link));
 
     // Fetch all matches from the database
-    const allMatches = await Match.find();
+    const allMatches = await cricketMatch.find();
 
     // Find matches that are in the database but not in the JSON file
     const matchesToRemove = allMatches.filter(
@@ -282,7 +296,7 @@ async function removeMissingMatches() {
 
     // Delete the matches from the database
     const deletePromises = matchesToRemove.map(async (match) => {
-      await Match.deleteOne({ _id: match._id });
+      await cricketMatch.deleteOne({ _id: match._id });
       console.log(`Removed match: ${match.name}`);
     });
 
@@ -295,17 +309,20 @@ async function removeMissingMatches() {
 }
 
 async function main() {
-  let driver;
-  const matchDataPath = path.join(__dirname, "matchdata.json");
+  const cricketmatchdataPath = path.join(
+    __dirname,
+    "../Cricket/cricketmatchdata.json"
+  );
+  driver = await new Builder().forBrowser("chrome").build();
+
+  console.log(`${cricketmatchdataPath}`);
   // const matchIdPath = path.join(__dirname, "matchid.json");
 
   // Clear the contents of the JSON files by writing an empty array (or object if needed)
-  fs.writeFileSync(matchDataPath, JSON.stringify([])); // Clears as an empty array
+  fs.writeFileSync(cricketmatchdataPath, JSON.stringify([])); // Clears as an empty array
   // fs.writeFileSync(matchIdPath, JSON.stringify([])); // Clears as an empty array
   console.log("Running fetchschedule.js");
   try {
-    driver = await new Builder().forBrowser("chrome").build();
-
     await login(driver);
 
     console.log("Fetching schedule data from the API.");
@@ -336,7 +353,10 @@ async function main() {
       .catch((err) => {
         console.error("Import failed:", err);
       });
-    console.log("Data with links written to matchdata.json");
+    console.log("Data with links written to cricketmatchdata.json");
+    console.log("Calling fetchFootballSchedule");
+    await mainFootball(driver);
+    console.log("fetchFootballSchedule executed successfully");
   } catch (error) {
     console.error("Error occurred:", error.message);
   } finally {

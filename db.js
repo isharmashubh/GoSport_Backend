@@ -13,7 +13,7 @@ mongoose
   });
 
 // Create a Schema for Users
-const matchSchema = new mongoose.Schema({
+const cricketMatchSchema = new mongoose.Schema({
   name: String,
   startTime: String,
   venue: String,
@@ -23,8 +23,19 @@ const matchSchema = new mongoose.Schema({
   m3u8link: String,
 });
 
-const Match = mongoose.model("Match", matchSchema);
+const footballMatchSchema = new mongoose.Schema({
+  name: String,
+  startTime: String,
+  venue: String,
+  tour: String,
+  link: String,
+  m3u8link: String,
+});
+
+const cricketMatch = mongoose.model("cricketMatch", cricketMatchSchema);
+const footballMatch = mongoose.model("footballMatch", footballMatchSchema);
 
 module.exports = {
-  Match,
+  cricketMatch,
+  footballMatch,
 };
