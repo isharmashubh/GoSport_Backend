@@ -8,7 +8,7 @@ on:
 
 jobs:
   selenium:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest # Change to Windows runner
 
     steps:
       - name: Checkout code
@@ -23,9 +23,8 @@ jobs:
         run: npm install
 
       - name: Run Selenium script
-        run: npm run build # Replace with your actual script command
+        run: npm run build # Ensure this command is correct for executing your server.js
         env:
-          # Set environment variables if necessary, e.g.:
           email: ${{ secrets.EMAIL }}
           password: ${{ secrets.PASSWORD }}
-          MONGODB_URI: ${{ secrets.PASSWORD }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }} # Ensure this variable is set

@@ -9,6 +9,9 @@ const port = 3005;
 
 // Serve static files from the 'public' folder
 app.use(express.static("public"));
+console.log(`${process.env.MONGODB_URI}`);
+
+// Add the rest of your existing code below
 
 // Connect to MongoDB
 async function connectDB() {
