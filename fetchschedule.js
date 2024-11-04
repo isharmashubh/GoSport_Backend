@@ -4,13 +4,16 @@ const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
 const util = require("util");
-
+require("dotenv").config();
 const execPromise = util.promisify(exec);
+const { Match } = require("../Fancode-Free-main/db");
+// Read credentials from .env
+const email = process.env.email;
+const password = process.env.password;
+const mongoose = require("mongoose");
 
-// Read credentials from config.json
-const config = JSON.parse(fs.readFileSync("config.json", "utf8"));
-const email = config.email;
-const password = config.password;
+console.log(`Email being used is ${email}`);
+console.log(`Password we are using is ${password}`);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -113,51 +116,137 @@ async function extractM3U8Links(driver, matchLink, matchid) {
   return modifiedLink || "";
 }
 
+async function importData() {
+  const self = this; // Store the context for use in async function
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Read and parse the JSON data
+      const data = JSON.parse(
+        fs.readFileSync(path.join(__dirname, "fetchdata.json"))
+      );
+      console.log("Printing match details here :-----");
+      console.log(data); // Log the entire data object for better visibility
+
+      // Use Promise.all to handle all match promises concurrently
+      const matchPromises = data.map(async (match) => {
+        const matchDetails = match[1]; // Extracting match details
+        const existingMatch = await Match.findOne({ link: matchDetails.link });
+
+        if (existingMatch) {
+          // If the match exists, check if m3u8link is empty
+          if (!existingMatch.m3u8link) {
+            // Update the m3u8link if it's empty
+            existingMatch.m3u8link = matchDetails.m3u8link;
+            await existingMatch.save();
+            console.log(`Updated m3u8link for match: ${matchDetails.name}`);
+          } else {
+            console.log(`Match already exists, skipping: ${matchDetails.name}`);
+          }
+        } else {
+          // Create and save a new match instance
+          const newMatch = new Match({
+            name: matchDetails.name,
+            startTime: matchDetails.startTime,
+            venue: matchDetails.venue,
+            tour: matchDetails.tour,
+            scorecard: matchDetails.scorecard || "", // Use empty string if undefined
+            link: matchDetails.link,
+            m3u8link: matchDetails.m3u8link,
+          });
+          await newMatch.save();
+          console.log(`Inserted new match: ${matchDetails.name}`);
+        }
+      });
+
+      await Promise.all(matchPromises); // Wait for all promises to complete
+      console.log("All matches imported successfully!");
+      resolve();
+    } catch (error) {
+      console.error("Error importing data:", error);
+      reject(error);
+    }
+  });
+}
+async function removeMissingMatches() {
+  try {
+    // Read and parse the JSON data from fetchdata.json
+    const data = JSON.parse(
+      fs.readFileSync(path.join(__dirname, "fetchdata.json"))
+    );
+
+    // Extract match links from the JSON data for comparison
+    const existingMatchLinks = new Set(data.map((match) => match[1].link));
+
+    // Fetch all matches from the database
+    const allMatches = await Match.find();
+
+    // Find matches that are in the database but not in the JSON file
+    const matchesToRemove = allMatches.filter(
+      (match) => !existingMatchLinks.has(match.link)
+    );
+
+    // Delete the matches from the database
+    const deletePromises = matchesToRemove.map(async (match) => {
+      await Match.deleteOne({ _id: match._id });
+      console.log(`Removed match: ${match.name}`);
+    });
+
+    await Promise.all(deletePromises); // Wait for all deletions to complete
+
+    console.log("All missing matches removed successfully!");
+  } catch (error) {
+    console.error("Error removing missing matches:", error);
+  }
+}
+
 async function main() {
   let driver;
+  console.log("Running fetchschedule.js");
   try {
     driver = await new Builder().forBrowser("chrome").build();
 
     await login(driver);
 
     console.log("Fetching schedule data from the API.");
-    const url = `https://www.fancode.com/graphql?extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22552b9a3d8af3f5dc94b8d308d6837f8b300738cf72025d1d91e4949e105ba9ad%22%7D%7D&operation=query&operationName=FetchScheduleData&variables=%7B%22filter%22%3A%7B%22slug%22%3A%22cricket%22%2C%22collectionId%22%3Anull%2C%22dateRange%22%3A%7B%22fromDate%22%3A%22${getIndianDate()}%22%2C%22toDate%22%3A%22${getIndianDate()}%22%7D%2C%22streamingFilter%22%3A%22STREAMING%22%2C%22isLive%22%3Atrue%2C%22tours%22%3A%5B%5D%7D%7D`;
+    // const url = `https://www.fancode.com/graphql?extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22552b9a3d8af3f5dc94b8d308d6837f8b300738cf72025d1d91e4949e105ba9ad%22%7D%7D&operation=query&operationName=FetchScheduleData&variables=%7B%22filter%22%3A%7B%22slug%22%3A%22cricket%22%2C%22collectionId%22%3Anull%2C%22dateRange%22%3A%7B%22fromDate%22%3A%22${getIndianDate()}%22%2C%22toDate%22%3A%22${getIndianDate()}%22%7D%2C%22streamingFilter%22%3A%22STREAMING%22%2C%22isLive%22%3Atrue%2C%22tours%22%3A%5B%5D%7D%7D`;
+    const url =
+      "https://fancode.com/graphql?extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22552b9a3d8af3f5dc94b8d308d6837f8b300738cf72025d1d91e4949e105ba9ad%22%7D%7D&operation=query&operationName=FetchScheduleData&variables=%7B%22filter%22%3A%7B%22slug%22%3A%22cricket%22%2C%22collectionId%22%3Anull%2C%22dateRange%22%3A%7B%22fromDate%22%3A%222024-11-04%22%2C%22toDate%22%3A%222024-11-04%22%7D%2C%22streamingFilter%22%3A%22STREAMING%22%2C%22isLive%22%3Atrue%2C%22tours%22%3A%5B%5D%7D%7D";
     console.log(`The API i am using to get data is  - ${url}`);
     const response = await axios.get(url);
     console.log(`Fetched data from the API.`);
-
-    fs.writeFileSync(
-      "public/fetchdata.json",
-      JSON.stringify(response.data, null, 2)
+    console.log(
+      `Recieved response is ${JSON.stringify(response.data, null, 2)}`
     );
-    console.log("Data written to fetchdata.json");
 
-    const data = fs.readFileSync("public/fetchdata.json", "utf8");
-    console.log("Read data from fetchdata.json.");
-
-    const jsonData = JSON.parse(data);
+    const jsonData = response.data;
     const matchMap = new Map();
-    const matches = [];
+    const liveMatches = []; // Array to store only LIVE matches
 
     jsonData.data.fetchScheduleData.edges.forEach((edge) => {
       edge.tours.forEach((tour) => {
         tour.matches.forEach((match) => {
-          matches.push(match.id);
-          matchMap.set(match.id, {
-            name: match.name,
-            startTime: match.startTime,
-            venue: match.venue,
-            tour: tour.tour.name,
-            scorecard: match.scorecard.cricketScore.description,
-            link: "",
-            m3u8link: "",
-          });
+          if (match.status === "LIVE") {
+            // Check if the match is live
+            liveMatches.push(match.id);
+            matchMap.set(match.id, {
+              name: match.name,
+              startTime: match.startTime,
+              venue: match.venue,
+              tour: tour.tour.name,
+              scorecard: match.scorecard.cricketScore.description,
+              link: "",
+              m3u8link: "",
+            });
+          }
         });
       });
     });
 
+    fs.writeFileSync("fetchdata.json", JSON.stringify(liveMatches, null, 2));
+    console.log("Filtered live matches written to fetchdata.json.");
+
     console.log("Match IDs and details prepared. Extracting m3u8 links.");
-    for (const id of matches) {
+    for (const id of liveMatches) {
       try {
         const { stdout: link } = await execPromise(
           `node extractMatchLink.js ${id}`
@@ -183,9 +272,23 @@ async function main() {
     }
 
     fs.writeFileSync(
-      "public/fetchdata.json",
+      "fetchdata.json",
       JSON.stringify(Array.from(matchMap.entries()), null, 2)
     );
+    removeMissingMatches()
+      .then(() => {
+        console.log("Removing extra matches completed.");
+      })
+      .catch((err) => {
+        console.error("Removing extra matches failed:", err);
+      });
+    importData()
+      .then(() => {
+        console.log("Data import completed.");
+      })
+      .catch((err) => {
+        console.error("Import failed:", err);
+      });
     console.log("Data with links written to fetchdata.json");
   } catch (error) {
     console.error("Error occurred:", error.message);
