@@ -18,7 +18,89 @@ console.log(`Password we are using is ${password}`);
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+async function fetchingdatadatewise(driver, date) {
+  const url = `https://www.fancode.com/graphql?extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22552b9a3d8af3f5dc94b8d308d6837f8b300738cf72025d1d91e4949e105ba9ad%22%7D%7D&operation=query&operationName=FetchScheduleData&variables=%7B%22filter%22%3A%7B%22slug%22%3A%22cricket%22%2C%22collectionId%22%3Anull%2C%22dateRange%22%3A%7B%22fromDate%22%3A%22${date}%22%2C%22toDate%22%3A%22${date}%22%7D%2C%22streamingFilter%22%3A%22STREAMING%22%2C%22isLive%22%3Atrue%2C%22tours%22%3A%5B%5D%7D%7D`;
 
+  console.log(`The API I am using to get data is - ${url}`);
+
+  try {
+    const response = await axios.get(url);
+    console.log(`Fetched data from the API.`);
+    console.log(
+      `Received response is ${JSON.stringify(response.data, null, 2)}`
+    );
+
+    const jsonData = response.data;
+    const matchMap = new Map();
+    const liveMatches = []; // Array to store only LIVE matches
+
+    jsonData.data.fetchScheduleData.edges.forEach((edge) => {
+      edge.tours.forEach((tour) => {
+        tour.matches.forEach((match) => {
+          if (match.status === "LIVE") {
+            // Check if the match is live
+            liveMatches.push(match.id);
+            matchMap.set(match.id, {
+              name: match.name,
+              startTime: match.startTime,
+              venue: match.venue,
+              tour: tour.tour.name,
+              scorecard: match.scorecard.cricketScore.description,
+              link: "",
+              m3u8link: "",
+            });
+          }
+        });
+      });
+    });
+
+    console.log("Match IDs and details prepared. Extracting m3u8 links.");
+    for (const id of liveMatches) {
+      try {
+        const { stdout: link } = await execPromise(
+          `node extractMatchLink.js ${id}`
+        );
+        const cleanedLink = link.trim();
+        if (cleanedLink) {
+          const matchDetails = matchMap.get(id);
+          matchDetails.link = cleanedLink;
+          matchMap.set(id, matchDetails);
+        }
+
+        console.log(`Processing match link ${cleanedLink}.`);
+        const m3u8Link = await extractM3U8Links(driver, cleanedLink, id); // Assuming `driver` is defined in scope
+
+        if (m3u8Link) {
+          const matchDetails = matchMap.get(id);
+          matchDetails.m3u8link = m3u8Link;
+          matchMap.set(id, matchDetails);
+        }
+        console.log(
+          `I have fetcheddata of date:- ${date} and written it inside matchdata.json`
+        );
+      } catch (error) {
+        console.error(`Error processing match ID ${id}:`, error.message);
+      }
+    }
+    console.log("I am writing data in matchdata.json from matchmap");
+    // Read existing data
+    let existingData = [];
+    try {
+      existingData = JSON.parse(fs.readFileSync("matchdata.json", "utf8"));
+    } catch (error) {
+      console.warn("No existing data found. Starting fresh.");
+    }
+
+    // Convert matchMap to an array and merge with existing data
+    const updatedData = [...existingData, ...Array.from(matchMap.entries())];
+
+    // Write the combined data back to matchdata.json
+    fs.writeFileSync("matchdata.json", JSON.stringify(updatedData, null, 2));
+    console.log("Appended new match data to matchdata.json.");
+  } catch (error) {
+    console.error(`Error fetching data:`, error.message);
+  }
+}
 async function login(driver) {
   console.log("Navigating to the login page...");
   await driver.get("https://www.fancode.com/cricket/schedule");
@@ -117,13 +199,19 @@ async function extractM3U8Links(driver, matchLink, matchid) {
 }
 
 async function importData() {
-  const self = this; // Store the context for use in async function
   return new Promise(async (resolve, reject) => {
     try {
       // Read and parse the JSON data
       const data = JSON.parse(
-        fs.readFileSync(path.join(__dirname, "fetchdata.json"))
+        fs.readFileSync(path.join(__dirname, "matchdata.json"))
       );
+
+      // Check if data is empty
+      if (!data || data.length === 0) {
+        console.log("No Match Available to Import");
+        return resolve(); // Exit the function
+      }
+
       console.log("Printing match details here :-----");
       console.log(data); // Log the entire data object for better visibility
 
@@ -133,6 +221,11 @@ async function importData() {
         const existingMatch = await Match.findOne({ link: matchDetails.link });
 
         if (existingMatch) {
+          console.log("This is an existing match just updating the scorecard");
+          existingMatch.scorecard = matchDetails.scorecard;
+          await existingMatch.save();
+          console.log(`Updated scorecard for match: ${matchDetails.name}`);
+          console.log(`I have updated :- ${existingMatch.scorecard}`);
           // If the match exists, check if m3u8link is empty
           if (!existingMatch.m3u8link) {
             // Update the m3u8link if it's empty
@@ -159,7 +252,7 @@ async function importData() {
       });
 
       await Promise.all(matchPromises); // Wait for all promises to complete
-      console.log("All matches imported successfully!");
+      console.log(`All matches imported successfully!`);
       resolve();
     } catch (error) {
       console.error("Error importing data:", error);
@@ -167,11 +260,12 @@ async function importData() {
     }
   });
 }
+
 async function removeMissingMatches() {
   try {
-    // Read and parse the JSON data from fetchdata.json
+    // Read and parse the JSON data from matchdata.json
     const data = JSON.parse(
-      fs.readFileSync(path.join(__dirname, "fetchdata.json"))
+      fs.readFileSync(path.join(__dirname, "matchdata.json"))
     );
 
     // Extract match links from the JSON data for comparison
@@ -201,6 +295,12 @@ async function removeMissingMatches() {
 
 async function main() {
   let driver;
+  const matchDataPath = path.join(__dirname, "matchdata.json");
+  // const matchIdPath = path.join(__dirname, "matchid.json");
+
+  // Clear the contents of the JSON files by writing an empty array (or object if needed)
+  fs.writeFileSync(matchDataPath, JSON.stringify([])); // Clears as an empty array
+  // fs.writeFileSync(matchIdPath, JSON.stringify([])); // Clears as an empty array
   console.log("Running fetchschedule.js");
   try {
     driver = await new Builder().forBrowser("chrome").build();
@@ -208,88 +308,34 @@ async function main() {
     await login(driver);
 
     console.log("Fetching schedule data from the API.");
-    // const url = `https://www.fancode.com/graphql?extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22552b9a3d8af3f5dc94b8d308d6837f8b300738cf72025d1d91e4949e105ba9ad%22%7D%7D&operation=query&operationName=FetchScheduleData&variables=%7B%22filter%22%3A%7B%22slug%22%3A%22cricket%22%2C%22collectionId%22%3Anull%2C%22dateRange%22%3A%7B%22fromDate%22%3A%22${getIndianDate()}%22%2C%22toDate%22%3A%22${getIndianDate()}%22%7D%2C%22streamingFilter%22%3A%22STREAMING%22%2C%22isLive%22%3Atrue%2C%22tours%22%3A%5B%5D%7D%7D`;
-    const url =
-      "https://fancode.com/graphql?extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22552b9a3d8af3f5dc94b8d308d6837f8b300738cf72025d1d91e4949e105ba9ad%22%7D%7D&operation=query&operationName=FetchScheduleData&variables=%7B%22filter%22%3A%7B%22slug%22%3A%22cricket%22%2C%22collectionId%22%3Anull%2C%22dateRange%22%3A%7B%22fromDate%22%3A%222024-11-04%22%2C%22toDate%22%3A%222024-11-04%22%7D%2C%22streamingFilter%22%3A%22STREAMING%22%2C%22isLive%22%3Atrue%2C%22tours%22%3A%5B%5D%7D%7D";
-    console.log(`The API i am using to get data is  - ${url}`);
-    const response = await axios.get(url);
-    console.log(`Fetched data from the API.`);
+    const today = getTodayDate();
     console.log(
-      `Recieved response is ${JSON.stringify(response.data, null, 2)}`
+      `I am passing the date to fetchingdatadatewise function is ${today}`
     );
+    await fetchingdatadatewise(driver, today); // Fetch data for today
 
-    const jsonData = response.data;
-    const matchMap = new Map();
-    const liveMatches = []; // Array to store only LIVE matches
+    // Get yesterday's date
+    const yesterdayDate = new Date(); // Create a new date object for today
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1); // Subtract one day
+    const yesterday = yesterdayDate.toISOString().split("T")[0]; // Format as YYYY-MM-DD
+    console.log(`Yesterday's date was ${yesterday}`);
+    await fetchingdatadatewise(driver, yesterday); // Fetch data for yesterday
 
-    jsonData.data.fetchScheduleData.edges.forEach((edge) => {
-      edge.tours.forEach((tour) => {
-        tour.matches.forEach((match) => {
-          if (match.status === "LIVE") {
-            // Check if the match is live
-            liveMatches.push(match.id);
-            matchMap.set(match.id, {
-              name: match.name,
-              startTime: match.startTime,
-              venue: match.venue,
-              tour: tour.tour.name,
-              scorecard: match.scorecard.cricketScore.description,
-              link: "",
-              m3u8link: "",
-            });
-          }
-        });
-      });
-    });
-
-    fs.writeFileSync("fetchdata.json", JSON.stringify(liveMatches, null, 2));
-    console.log("Filtered live matches written to fetchdata.json.");
-
-    console.log("Match IDs and details prepared. Extracting m3u8 links.");
-    for (const id of liveMatches) {
-      try {
-        const { stdout: link } = await execPromise(
-          `node extractMatchLink.js ${id}`
-        );
-        const cleanedLink = link.trim();
-        if (cleanedLink) {
-          const matchDetails = matchMap.get(id);
-          matchDetails.link = cleanedLink;
-          matchMap.set(id, matchDetails);
-        }
-
-        console.log(`Processing match link ${cleanedLink}.`);
-        const m3u8Link = await extractM3U8Links(driver, cleanedLink, id);
-
-        if (m3u8Link) {
-          const matchDetails = matchMap.get(id);
-          matchDetails.m3u8link = m3u8Link;
-          matchMap.set(id, matchDetails);
-        }
-      } catch (error) {
-        console.error(`Error processing match ID ${id}:`, error.message);
-      }
-    }
-
-    fs.writeFileSync(
-      "fetchdata.json",
-      JSON.stringify(Array.from(matchMap.entries()), null, 2)
-    );
-    removeMissingMatches()
+    await removeMissingMatches()
       .then(() => {
         console.log("Removing extra matches completed.");
       })
       .catch((err) => {
         console.error("Removing extra matches failed:", err);
       });
-    importData()
+    await importData()
       .then(() => {
         console.log("Data import completed.");
       })
       .catch((err) => {
         console.error("Import failed:", err);
       });
-    console.log("Data with links written to fetchdata.json");
+    console.log("Data with links written to matchdata.json");
   } catch (error) {
     console.error("Error occurred:", error.message);
   } finally {
@@ -299,12 +345,9 @@ async function main() {
   }
 }
 
-function getIndianDate() {
-  const now = new Date();
-  const istOffset = 5.5 * 60;
-  const utcOffset = now.getTimezoneOffset();
-  const istDate = new Date(now.getTime() + istOffset * 60000);
-  return istDate.toISOString().split("T")[0];
+function getTodayDate() {
+  const today = new Date();
+  return today.toISOString().split("T")[0]; // Format as YYYY-MM-DD
 }
 
 main().catch((error) => {
