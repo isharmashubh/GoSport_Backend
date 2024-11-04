@@ -6,7 +6,8 @@ const { exec } = require("child_process");
 const util = require("util");
 require("dotenv").config();
 const execPromise = util.promisify(exec);
-const { Match } = require("../Fancode-Free-main/db");
+const { Match } = require("./db");
+
 // Read credentials from .env
 const email = process.env.email;
 const password = process.env.password;
