@@ -2,15 +2,12 @@ const axios = require("axios");
 const { Builder, By, until } = require("selenium-webdriver");
 const fs = require("fs");
 const path = require("path");
-const { exec } = require("child_process");
-const util = require("util");
 const getMatchLink = require("../extractMatchLink");
 const mainFootball = require("../Football/fetchFootballSchedule");
 const game = "cricket";
 require("dotenv").config({
   path: require("path").resolve(__dirname, "../.env"),
 });
-const execPromise = util.promisify(exec);
 const { cricketMatch } = require("../db");
 const matchMap = new Map();
 let driver;
@@ -18,7 +15,6 @@ let driver;
 // Reading credentials from .env
 const email = process.env.email;
 const password = process.env.password;
-const mongoose = require("mongoose");
 
 console.log(`Email being used is ${email}`);
 console.log(`Password we are using is ${password}`);
@@ -210,7 +206,8 @@ async function updateMatches() {
       // If the match exists in the database, update the scorecard and m3u8link
       if (existingMatch) {
         existingMatch.scorecard = matchData.scorecard;
-        if (existingMatch.m3u8link) existingMatch.m3u8link = matchData.m3u8link;
+        if (existingMatch.m3u8link && matchData.m3u8link)
+          existingMatch.m3u8link = matchData.m3u8link;
 
         // Save the updated match back to the database
         await existingMatch.save();

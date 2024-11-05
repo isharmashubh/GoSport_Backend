@@ -1,15 +1,11 @@
 const axios = require("axios");
-const { Builder, By, until } = require("selenium-webdriver");
 const fs = require("fs");
 const path = require("path");
-const { exec } = require("child_process");
-const util = require("util");
 const getMatchLink = require("../extractMatchLink");
 const game = "football";
 require("dotenv").config({
   path: require("path").resolve(__dirname, "../.env"),
 });
-const execPromise = util.promisify(exec);
 const { footballMatch } = require("../db");
 const matchMap = new Map();
 
@@ -154,7 +150,7 @@ async function updateMatches() {
       const existingMatch = existingMatchesMap.get(matchData.link);
 
       // If the match exists in the database, update m3u8link
-      if (existingMatch && existingMatch.m3u8link) {
+      if (existingMatch && matchData.m3u8link) {
         existingMatch.m3u8link = matchData.m3u8link;
 
         // Save the updated match back to the database
