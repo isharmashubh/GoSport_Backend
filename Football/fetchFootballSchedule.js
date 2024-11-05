@@ -139,6 +139,23 @@ async function updateMatches() {
   try {
     // Iterate over each match in matchMap
     for (const [matchId, matchData] of matchMap) {
+      // First, find the existing match
+      const existingMatch = await footballMatch.findOne({
+        link: matchData.link,
+      });
+
+      // Determine the m3u8link to set
+      let m3u8linkToSet;
+      if (existingMatch) {
+        // Only check for m3u8link if existingMatch is not null
+        m3u8linkToSet = !existingMatch.m3u8link
+          ? matchData.m3u8link // Use new if existing m3u8link is falsy
+          : existingMatch.m3u8link; // Otherwise, keep the existing m3u8link
+      } else {
+        // If no existing match, set to the new m3u8link
+        m3u8linkToSet = matchData.m3u8link;
+      }
+
       // Use findOneAndUpdate to update if exists or insert if not
       const result = await footballMatch.findOneAndUpdate(
         { link: matchData.link }, // Filter by link to find the existing match
@@ -148,7 +165,7 @@ async function updateMatches() {
             startTime: matchData.startTime,
             venue: matchData.venue,
             tour: matchData.tour,
-            m3u8link: matchData.m3u8link,
+            m3u8link: m3u8linkToSet, // Set determined m3u8link
           },
         },
         { upsert: true, new: true } // upsert creates if doesn't exist, new returns the updated document
