@@ -12,9 +12,10 @@ require("dotenv").config({
 });
 const execPromise = util.promisify(exec);
 const { cricketMatch } = require("../db");
+const matchMap = new Map();
 let driver;
 
-// Read credentials from .env
+// Reading credentials from .env
 const email = process.env.email;
 const password = process.env.password;
 const mongoose = require("mongoose");
@@ -38,7 +39,6 @@ async function fetchingdatadatewise(driver, date) {
     );
 
     const jsonData = response.data;
-    const matchMap = new Map();
     const liveMatches = []; // Array to store only LIVE matches
 
     jsonData.data.fetchScheduleData.edges.forEach((edge) => {
@@ -81,37 +81,21 @@ async function fetchingdatadatewise(driver, date) {
           matchDetails.m3u8link = m3u8Link;
           matchMap.set(id, matchDetails);
         }
-        console.log(
-          `I have fetcheddata of date:- ${date} and written it inside cricketmatchdata.json`
-        );
       } catch (error) {
         console.error(`Error processing match ID ${id}:`, error.message);
       }
     }
-    console.log("I am writing data in cricketmatchdata.json from matchmap");
-    // Read existing data
-    let existingData = [];
-    try {
-      existingData = JSON.parse(
-        fs.readFileSync("../Cricket/cricketmatchdata.json", "utf8")
-      );
-    } catch (error) {
-      console.warn("No existing data found. Starting fresh.");
-    }
 
-    // Convert matchMap to an array and merge with existing data
-    const updatedData = [...existingData, ...Array.from(matchMap.entries())];
-
-    // Write the combined data back to cricketmatchdata.json
-    fs.writeFileSync(
-      "../Cricket/cricketmatchdata.json",
-      JSON.stringify(updatedData, null, 2)
+    // Display the contents of matchMap before proceeding
+    console.log(
+      `Current data in matchMap for date ${date}:`,
+      Array.from(matchMap.entries())
     );
-    console.log("Appended new match data to cricketmatchdata.json.");
   } catch (error) {
     console.error(`Error fetching data:`, error.message);
   }
 }
+
 async function login(driver) {
   console.log("Navigating to the login page...");
   await driver.get("https://www.fancode.com/cricket/schedule");
@@ -209,89 +193,63 @@ async function extractM3U8Links(driver, matchLink, matchid) {
   return modifiedLink || "";
 }
 
-async function importData() {
-  return new Promise(async (resolve, reject) => {
-    try {
-      // Read and parse the JSON data
-      const data = JSON.parse(
-        fs.readFileSync(
-          path.join(__dirname, "../Cricket/cricketmatchdata.json")
-        )
-      );
+async function updateMatches() {
+  try {
+    // Fetch all matches from the database
+    const allMatches = await cricketMatch.find();
 
-      // Check if data is empty
-      if (!data || data.length === 0) {
-        console.log("No Match Available to Import");
-        return resolve(); // Exit the function
-      }
+    // Create a Map for quick lookup of existing matches by link
+    const existingMatchesMap = new Map(
+      allMatches.map((match) => [match.link, match])
+    );
 
-      console.log("Printing match details here :-----");
-      console.log(data); // Log the entire data object for better visibility
+    // Iterate over each match in matchMap
+    for (const [matchId, matchData] of matchMap) {
+      const existingMatch = existingMatchesMap.get(matchData.link);
 
-      // Use Promise.all to handle all match promises concurrently
-      const matchPromises = data.map(async (match) => {
-        const matchDetails = match[1]; // Extracting match details
-        const existingMatch = await cricketMatch.findOne({
-          link: matchDetails.link,
+      // If the match exists in the database, update the scorecard and m3u8link
+      if (existingMatch) {
+        existingMatch.scorecard = matchData.scorecard;
+        if (existingMatch.m3u8link) existingMatch.m3u8link = matchData.m3u8link;
+
+        // Save the updated match back to the database
+        await existingMatch.save();
+        console.log(`Updated match: ${existingMatch.name}`);
+      } else {
+        // If the match does not exist, create a new one
+        const newMatch = new cricketMatch({
+          name: matchData.name,
+          startTime: matchData.startTime,
+          venue: matchData.venue,
+          tour: matchData.tour,
+          scorecard: matchData.scorecard,
+          link: matchData.link,
+          m3u8link: matchData.m3u8link,
         });
-
-        if (existingMatch) {
-          console.log("This is an existing match just updating the scorecard");
-          existingMatch.scorecard = matchDetails.scorecard;
-          await existingMatch.save();
-          console.log(`Updated scorecard for match: ${matchDetails.name}`);
-          console.log(`I have updated :- ${existingMatch.scorecard}`);
-          // If the match exists, check if m3u8link is empty
-          if (!existingMatch.m3u8link) {
-            // Update the m3u8link if it's empty
-            existingMatch.m3u8link = matchDetails.m3u8link;
-            await existingMatch.save();
-            console.log(`Updated m3u8link for match: ${matchDetails.name}`);
-          } else {
-            console.log(`Match already exists, skipping: ${matchDetails.name}`);
-          }
-        } else {
-          // Create and save a new match instance
-          const newMatch = new cricketMatch({
-            name: matchDetails.name,
-            startTime: matchDetails.startTime,
-            venue: matchDetails.venue,
-            tour: matchDetails.tour,
-            scorecard: matchDetails.scorecard || "", // Use empty string if undefined
-            link: matchDetails.link,
-            m3u8link: matchDetails.m3u8link,
-          });
-          await newMatch.save();
-          console.log(`Inserted new match: ${matchDetails.name}`);
-        }
-      });
-
-      await Promise.all(matchPromises); // Wait for all promises to complete
-      console.log(`All matches imported successfully!`);
-      resolve();
-    } catch (error) {
-      console.error("Error importing data:", error);
-      reject(error);
+        await newMatch.save();
+        console.log(`Added new match: ${newMatch.name}`);
+      }
     }
-  });
+
+    console.log("All existing matches updated successfully!");
+  } catch (error) {
+    console.error("Error updating matches:", error);
+  }
 }
 
 async function removeMissingMatches() {
   try {
-    // Read and parse the JSON data from cricketmatchdata.json
-    const data = JSON.parse(
-      fs.readFileSync(path.join(__dirname, "../Cricket/cricketmatchdata.json"))
-    );
-
-    // Extract match links from the JSON data for comparison
-    const existingMatchLinks = new Set(data.map((match) => match[1].link));
-
     // Fetch all matches from the database
     const allMatches = await cricketMatch.find();
 
-    // Find matches that are in the database but not in the JSON file
+    // Create a Set of match links from matchMap for comparison
+    const matchMapLinks = new Set(
+      Array.from(matchMap.values()).map((match) => match.link)
+    );
+
+    // Find matches that are in the database but not in matchMap
     const matchesToRemove = allMatches.filter(
-      (match) => !existingMatchLinks.has(match.link)
+      (match) => !matchMapLinks.has(match.link)
     );
 
     // Delete the matches from the database
@@ -302,25 +260,23 @@ async function removeMissingMatches() {
 
     await Promise.all(deletePromises); // Wait for all deletions to complete
 
-    console.log("All missing matches removed successfully!");
+    console.log("All extra matches removed successfully!");
   } catch (error) {
     console.error("Error removing missing matches:", error);
   }
 }
 
-async function main() {
-  const cricketmatchdataPath = path.join(
-    __dirname,
-    "../Cricket/cricketmatchdata.json"
-  );
+async function mainCricket() {
+  const cricketmatchdataPath = path.join(__dirname, "./cricketmatchdata.json");
   driver = await new Builder().forBrowser("chrome").build();
 
-  console.log(`${cricketmatchdataPath}`);
-  // const matchIdPath = path.join(__dirname, "matchid.json");
+  console.log(
+    `The path from where I am trying to clear the data is: ${cricketmatchdataPath}`
+  );
 
-  // Clear the contents of the JSON files by writing an empty array (or object if needed)
-  fs.writeFileSync(cricketmatchdataPath, JSON.stringify([])); // Clears as an empty array
-  // fs.writeFileSync(matchIdPath, JSON.stringify([])); // Clears as an empty array
+  // Clear the contents of the JSON file, leaving it completely empty
+  fs.writeFileSync(cricketmatchdataPath, ""); // Clears with an empty file, no content at all
+
   console.log("Running fetchschedule.js");
   try {
     await login(driver);
@@ -338,7 +294,11 @@ async function main() {
     const yesterday = yesterdayDate.toISOString().split("T")[0]; // Format as YYYY-MM-DD
     console.log(`Yesterday's date was ${yesterday}`);
     await fetchingdatadatewise(driver, yesterday); // Fetch data for yesterday
-
+    // Convert matchMap to an array
+    const matchDataToWrite = Array.from(matchMap.entries()).map(
+      ([id, details]) => [id, details]
+    );
+    // Remove extra matches after updating
     await removeMissingMatches()
       .then(() => {
         console.log("Removing extra matches completed.");
@@ -346,14 +306,46 @@ async function main() {
       .catch((err) => {
         console.error("Removing extra matches failed:", err);
       });
-    await importData()
+    // Update existing matches first
+    await updateMatches()
       .then(() => {
-        console.log("Data import completed.");
+        console.log("Updated existing matches.");
       })
       .catch((err) => {
-        console.error("Import failed:", err);
+        console.error("Updating matches failed:", err);
       });
-    console.log("Data with links written to cricketmatchdata.json");
+
+    // Write match data to JSON file
+    fs.writeFile(
+      path.join(__dirname, "cricketmatchdata.json"),
+      JSON.stringify(matchDataToWrite, null, 2),
+      (err) => {
+        if (err) {
+          console.error("Error writing data to file:", err);
+        } else {
+          console.log(
+            "Match data successfully written to cricketmatchdata.json"
+          );
+
+          // Read and print the contents of cricketmatchdata.json after writing
+          fs.readFile(
+            path.join(__dirname, "cricketmatchdata.json"),
+            "utf-8",
+            (err, currentData) => {
+              if (err) {
+                console.error("Error reading cricketmatchdata.json:", err);
+              } else {
+                console.log(
+                  "Current data in cricketmatchdata.json:",
+                  currentData
+                );
+              }
+            }
+          );
+        }
+      }
+    );
+
     console.log("Calling fetchFootballSchedule");
     await mainFootball(driver);
     console.log("fetchFootballSchedule executed successfully");
@@ -368,9 +360,9 @@ async function main() {
 
 function getTodayDate() {
   const today = new Date();
-  return today.toISOString().split("T")[0]; // Format as YYYY-MM-DD
+  const offsetIST = 5.5 * 60 * 60 * 1000; // Offset in milliseconds for IST (UTC+5:30)
+  const todayIST = new Date(today.getTime() + offsetIST);
+  return todayIST.toISOString().split("T")[0]; // Format as YYYY-MM-DD
 }
-
-main().catch((error) => {
-  console.error("Error:", error);
-});
+// mainCricket();
+module.exports = mainCricket;

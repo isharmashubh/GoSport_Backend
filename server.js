@@ -5,6 +5,7 @@ const { exec } = require("child_process");
 const mongoose = require("mongoose");
 require("dotenv").config();
 const app = express();
+const mainCricket = require("./Cricket/fetchschedule");
 const port = 3005;
 
 // Serve static files from the 'public' folder
@@ -24,24 +25,25 @@ async function connectDB() {
 }
 
 // Execute fetchSchedule.js once when the server starts
-async function executeFetchSchedule() {
-  console.log("Calling fetchSchedule.js");
-  exec("node Cricket/fetchSchedule.js", (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error executing fetchSchedule.js: ${error}`);
-      return;
-    }
-    if (stderr) {
-      console.error(`stderr: ${stderr}`);
-    }
-    console.log(`fetchSchedule.js executed successfully: ${stdout}`);
-  });
-}
+// async function executeFetchSchedule() {
+//   console.log("Calling fetchSchedule.js");
+//   exec("node Cricket/fetchSchedule.js", (error, stdout, stderr) => {
+//     if (error) {
+//       console.error(`Error executing fetchSchedule.js: ${error}`);
+//       return;
+//     }
+//     if (stderr) {
+//       console.error(`stderr: ${stderr}`);
+//     }
+//     console.log(`fetchSchedule.js executed successfully: ${stdout}`);
+//   });
+// }
 
 // Initialize the server
 async function startServer() {
   await connectDB();
-  await executeFetchSchedule();
+  // await executeFetchSchedule();
+  await mainCricket();
 }
 
 startServer().catch((err) => console.error("Error starting server:", err));

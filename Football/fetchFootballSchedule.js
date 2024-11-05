@@ -11,6 +11,7 @@ require("dotenv").config({
 });
 const execPromise = util.promisify(exec);
 const { footballMatch } = require("../db");
+const matchMap = new Map();
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -28,7 +29,6 @@ async function fetchingdatadatewise(driver, date) {
     );
 
     const jsonData = response.data;
-    const matchMap = new Map();
     const liveMatches = []; // Array to store only LIVE matches
 
     jsonData.data.fetchScheduleData.edges.forEach((edge) => {
@@ -70,33 +70,16 @@ async function fetchingdatadatewise(driver, date) {
           matchDetails.m3u8link = m3u8Link;
           matchMap.set(id, matchDetails);
         }
-        console.log(
-          `I have fetcheddata of date:- ${date} and written it inside footballmatchdata.json`
-        );
       } catch (error) {
         console.error(`Error processing match ID ${id}:`, error.message);
       }
     }
-    console.log("I am writing data in footballmatchdata.json from matchmap");
-    // Read existing data
-    let existingData = [];
-    try {
-      existingData = JSON.parse(
-        fs.readFileSync("../Football/footballmatchdata.json", "utf8")
-      );
-    } catch (error) {
-      console.warn("No existing data found. Starting fresh.");
-    }
 
-    // Convert matchMap to an array and merge with existing data
-    const updatedData = [...existingData, ...Array.from(matchMap.entries())];
-
-    // Write the combined data back to footballmatchdata.json
-    fs.writeFileSync(
-      "../Football/footballmatchdata.json",
-      JSON.stringify(updatedData, null, 2)
+    // Display the contents of matchMap before proceeding
+    console.log(
+      `Current data in matchMap for date ${date}:`,
+      Array.from(matchMap.entries())
     );
-    console.log("Appended new match data to footballmatchdata.json.");
   } catch (error) {
     console.error(`Error fetching data:`, error.message);
   }
@@ -156,85 +139,61 @@ async function extractM3U8Links(driver, matchLink, matchid) {
   return modifiedLink || "";
 }
 
-async function importData() {
-  return new Promise(async (resolve, reject) => {
-    try {
-      // Read and parse the JSON data
-      const data = JSON.parse(
-        fs.readFileSync(
-          path.join(__dirname, "../Football/footballmatchdata.json")
-        )
-      );
+async function updateMatches() {
+  try {
+    // Fetch all matches from the database
+    const allMatches = await footballMatch.find();
 
-      // Check if data is empty
-      if (!data || data.length === 0) {
-        console.log("No Match Available to Import");
-        return resolve(); // Exit the function
-      }
+    // Create a Map for quick lookup of existing matches by link
+    const existingMatchesMap = new Map(
+      allMatches.map((match) => [match.link, match])
+    );
 
-      console.log("Printing match details here :-----");
-      console.log(data); // Log the entire data object for better visibility
+    // Iterate over each match in matchMap
+    for (const [matchId, matchData] of matchMap) {
+      const existingMatch = existingMatchesMap.get(matchData.link);
 
-      // Use Promise.all to handle all match promises concurrently
-      const matchPromises = data.map(async (match) => {
-        const matchDetails = match[1]; // Extracting match details
-        const existingMatch = await footballMatch.findOne({
-          link: matchDetails.link,
+      // If the match exists in the database, update m3u8link
+      if (existingMatch && existingMatch.m3u8link) {
+        existingMatch.m3u8link = matchData.m3u8link;
+
+        // Save the updated match back to the database
+        await existingMatch.save();
+        console.log(`Updated match: ${existingMatch.name}`);
+      } else {
+        // If the match does not exist, create a new one
+        const newMatch = new footballMatch({
+          name: matchData.name,
+          startTime: matchData.startTime,
+          venue: matchData.venue,
+          tour: matchData.tour,
+          link: matchData.link,
+          m3u8link: matchData.m3u8link,
         });
-
-        if (existingMatch) {
-          // If the match exists, check if m3u8link is empty
-          if (!existingMatch.m3u8link) {
-            // Update the m3u8link if it's empty
-            existingMatch.m3u8link = matchDetails.m3u8link;
-            await existingMatch.save();
-            console.log(`Updated m3u8link for match: ${matchDetails.name}`);
-          } else {
-            console.log(`Match already exists, skipping: ${matchDetails.name}`);
-          }
-        } else {
-          // Create and save a new match instance
-          const newMatch = new footballMatch({
-            name: matchDetails.name,
-            startTime: matchDetails.startTime,
-            venue: matchDetails.venue,
-            tour: matchDetails.tour,
-            link: matchDetails.link,
-            m3u8link: matchDetails.m3u8link,
-          });
-          await newMatch.save();
-          console.log(`Inserted new match: ${matchDetails.name}`);
-        }
-      });
-
-      await Promise.all(matchPromises); // Wait for all promises to complete
-      console.log(`All matches imported successfully!`);
-      resolve();
-    } catch (error) {
-      console.error("Error importing data:", error);
-      reject(error);
+        await newMatch.save();
+        console.log(`Added new match: ${newMatch.name}`);
+      }
     }
-  });
+
+    console.log("All existing matches updated successfully!");
+  } catch (error) {
+    console.error("Error updating matches:", error);
+  }
 }
 
 async function removeMissingMatches() {
   try {
-    // Read and parse the JSON data from footballmatchdata.json
-    const data = JSON.parse(
-      fs.readFileSync(
-        path.join(__dirname, "../Football/footballmatchdata.json")
-      )
-    );
-
-    // Extract match links from the JSON data for comparison
-    const existingMatchLinks = new Set(data.map((match) => match[1].link));
-
     // Fetch all matches from the database
     const allMatches = await footballMatch.find();
 
-    // Find matches that are in the database but not in the JSON file
+    // Create a Set of match links from matchMap for comparison
+    const matchMapLinks = new Set(
+      Array.from(matchMap.values()).map((match) => match.link)
+    );
+
+    // Find matches that are in the database but not in matchMap
     const matchesToRemove = allMatches.filter(
-      (match) => !existingMatchLinks.has(match.link)
+      (match) => !matchMapLinks.has(match.link)
     );
 
     // Delete the matches from the database
@@ -245,23 +204,26 @@ async function removeMissingMatches() {
 
     await Promise.all(deletePromises); // Wait for all deletions to complete
 
-    console.log("All missing matches removed successfully!");
+    console.log("All extra matches removed successfully!");
   } catch (error) {
     console.error("Error removing missing matches:", error);
   }
 }
 
 async function mainFootball(driver) {
-  //   let driver;
-  const footballmatchdataPath = path.join(
+  const footballMatchdataPath = path.join(
     __dirname,
-    "../Football/footballmatchdata.json"
+    "./footballmatchdata.json"
   );
 
-  console.log(`${footballmatchdataPath}`);
+  console.log(
+    `The path from where I am trying to clear the data is: ${footballMatchdataPath}`
+  );
 
-  fs.writeFileSync(footballmatchdataPath, JSON.stringify([])); // Clears as an empty array
-  console.log("Running fetchFootballschedule.js");
+  // Clear the contents of the JSON file, leaving it completely empty
+  fs.writeFileSync(footballMatchdataPath, "");
+
+  console.log("Running fetchFootballSchedule.js");
   try {
     console.log("Fetching schedule data from the API.");
     const today = getTodayDate();
@@ -276,7 +238,11 @@ async function mainFootball(driver) {
     const yesterday = yesterdayDate.toISOString().split("T")[0]; // Format as YYYY-MM-DD
     console.log(`Yesterday's date was ${yesterday}`);
     await fetchingdatadatewise(driver, yesterday); // Fetch data for yesterday
-
+    // Convert matchMap to an array
+    const matchDataToWrite = Array.from(matchMap.entries()).map(
+      ([id, details]) => [id, details]
+    );
+    // Remove extra matches after updating
     await removeMissingMatches()
       .then(() => {
         console.log("Removing extra matches completed.");
@@ -284,14 +250,45 @@ async function mainFootball(driver) {
       .catch((err) => {
         console.error("Removing extra matches failed:", err);
       });
-    await importData()
+    // Update existing matches first
+    await updateMatches()
       .then(() => {
-        console.log("Data import completed.");
+        console.log("Updated existing matches.");
       })
       .catch((err) => {
-        console.error("Import failed:", err);
+        console.error("Updating matches failed:", err);
       });
-    console.log("Data with links written to footballmatchdata.json");
+
+    // Write match data to JSON file
+    fs.writeFile(
+      path.join(__dirname, "footballmatchdata.json"),
+      JSON.stringify(matchDataToWrite, null, 2),
+      (err) => {
+        if (err) {
+          console.error("Error writing data to file:", err);
+        } else {
+          console.log(
+            "Match data successfully written to footballmatchdata.json"
+          );
+
+          // Read and print the contents of footballmatchdata.json after writing
+          fs.readFile(
+            path.join(__dirname, "footballmatchdata.json"),
+            "utf-8",
+            (err, currentData) => {
+              if (err) {
+                console.error("Error reading footballmatchdata.json:", err);
+              } else {
+                console.log(
+                  "Current data in footballmatchdata.json:",
+                  currentData
+                );
+              }
+            }
+          );
+        }
+      }
+    );
   } catch (error) {
     console.error("Error occurred:", error.message);
   }
@@ -299,7 +296,9 @@ async function mainFootball(driver) {
 
 function getTodayDate() {
   const today = new Date();
-  return today.toISOString().split("T")[0]; // Format as YYYY-MM-DD
+  const offsetIST = 5.5 * 60 * 60 * 1000; // Offset in milliseconds for IST (UTC+5:30)
+  const todayIST = new Date(today.getTime() + offsetIST);
+  return todayIST.toISOString().split("T")[0]; // Format as YYYY-MM-DD
 }
-
+// mainFootballl();
 module.exports = mainFootball;
