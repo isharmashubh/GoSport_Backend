@@ -20,9 +20,9 @@ async function fetchingdatadatewise(driver, date) {
   try {
     const response = await axios.get(url);
     console.log(`Fetched data from the API.`);
-    console.log(
-      `Received response is ${JSON.stringify(response.data, null, 2)}`
-    );
+    // console.log(
+    //   `Received response is ${JSON.stringify(response.data, null, 2)}`
+    // );
 
     const jsonData = response.data;
     const liveMatches = []; // Array to store only LIVE matches
@@ -72,10 +72,10 @@ async function fetchingdatadatewise(driver, date) {
     }
 
     // Display the contents of matchMap before proceeding
-    console.log(
-      `Current data in matchMap for date ${date}:`,
-      Array.from(matchMap.entries())
-    );
+    // console.log(
+    //   `Current data in matchMap for date ${date}:`,
+    //   Array.from(matchMap.entries())
+    // );
   } catch (error) {
     console.error(`Error fetching data:`, error.message);
   }
@@ -137,41 +137,31 @@ async function extractM3U8Links(driver, matchLink, matchid) {
 
 async function updateMatches() {
   try {
-    // Fetch all matches from the database
-    const allMatches = await footballMatch.find();
-
-    // Create a Map for quick lookup of existing matches by link
-    const existingMatchesMap = new Map(
-      allMatches.map((match) => [match.link, match])
-    );
-
     // Iterate over each match in matchMap
     for (const [matchId, matchData] of matchMap) {
-      const existingMatch = existingMatchesMap.get(matchData.link);
+      // Use findOneAndUpdate to update if exists or insert if not
+      const result = await footballMatch.findOneAndUpdate(
+        { link: matchData.link }, // Filter by link to find the existing match
+        {
+          $set: {
+            name: matchData.name,
+            startTime: matchData.startTime,
+            venue: matchData.venue,
+            tour: matchData.tour,
+            m3u8link: matchData.m3u8link,
+          },
+        },
+        { upsert: true, new: true } // upsert creates if doesn't exist, new returns the updated document
+      );
 
-      // If the match exists in the database, update m3u8link
-      if (existingMatch && matchData.m3u8link) {
-        existingMatch.m3u8link = matchData.m3u8link;
-
-        // Save the updated match back to the database
-        await existingMatch.save();
-        console.log(`Updated match: ${existingMatch.name}`);
+      if (result.upserted) {
+        console.log(`Added new match: ${matchData.name}`);
       } else {
-        // If the match does not exist, create a new one
-        const newMatch = new footballMatch({
-          name: matchData.name,
-          startTime: matchData.startTime,
-          venue: matchData.venue,
-          tour: matchData.tour,
-          link: matchData.link,
-          m3u8link: matchData.m3u8link,
-        });
-        await newMatch.save();
-        console.log(`Added new match: ${newMatch.name}`);
+        console.log(`Updated match: ${result.name}`);
       }
     }
 
-    console.log("All existing matches updated successfully!");
+    console.log("All matches processed successfully!");
   } catch (error) {
     console.error("Error updating matches:", error);
   }
@@ -275,10 +265,10 @@ async function mainFootball(driver) {
               if (err) {
                 console.error("Error reading footballmatchdata.json:", err);
               } else {
-                console.log(
-                  "Current data in footballmatchdata.json:",
-                  currentData
-                );
+                // console.log(
+                //   "Current data in footballmatchdata.json:",
+                //   currentData
+                // );
               }
             }
           );
