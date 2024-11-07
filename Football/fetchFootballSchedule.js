@@ -148,9 +148,7 @@ async function updateMatches() {
       let m3u8linkToSet;
       if (existingMatch) {
         // Only check for m3u8link if existingMatch is not null
-        m3u8linkToSet = !existingMatch.m3u8link
-          ? matchData.m3u8link // Use new if existing m3u8link is falsy
-          : existingMatch.m3u8link; // Otherwise, keep the existing m3u8link
+        m3u8linkToSet = existingMatch.m3u8link || matchData.m3u8link;
       } else {
         // If no existing match, set to the new m3u8link
         m3u8linkToSet = matchData.m3u8link;
@@ -235,10 +233,7 @@ async function mainFootball(driver) {
     );
     await fetchingdatadatewise(driver, today); // Fetch data for today
 
-    // Get yesterday's date
-    const yesterdayDate = new Date(); // Create a new date object for today
-    yesterdayDate.setDate(yesterdayDate.getDate() - 1); // Subtract one day
-    const yesterday = yesterdayDate.toISOString().split("T")[0]; // Format as YYYY-MM-DD
+    const yesterday = getYesterdayDate();
     console.log(`Yesterday's date was ${yesterday}`);
     await fetchingdatadatewise(driver, yesterday); // Fetch data for yesterday
     // Convert matchMap to an array
@@ -302,6 +297,13 @@ function getTodayDate() {
   const offsetIST = 5.5 * 60 * 60 * 1000; // Offset in milliseconds for IST (UTC+5:30)
   const todayIST = new Date(today.getTime() + offsetIST);
   return todayIST.toISOString().split("T")[0]; // Format as YYYY-MM-DD
+}
+function getYesterdayDate() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1); // Subtract one day
+  const offsetIST = 5.5 * 60 * 60 * 1000; // Offset in milliseconds for IST (UTC+5:30)
+  const yesterdayIST = new Date(yesterday.getTime() + offsetIST);
+  return yesterdayIST.toISOString().split("T")[0]; // Format as YYYY-MM-DD
 }
 // mainFootballl();
 module.exports = mainFootball;
