@@ -48,7 +48,9 @@ async function fetchingdatadatewise(driver, date) {
               startTime: match.startTime,
               venue: match.venue,
               tour: tour.tour.name,
-              scorecard: match.scorecard.cricketScore.description,
+             scorecard:
+                match?.scorecard?.cricketScore?.description ||
+                "No description available",
               link: "",
               m3u8link: "",
             });
